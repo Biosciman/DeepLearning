@@ -87,5 +87,53 @@ a = a + 1   # numpy变了，tensor不变
 # print(b)
 
 # 用numpy实现两层神经网络
+# 定义样本数，输入层，隐藏层，输出层的参数
+# 每个样本有1000个变量，输入层的神经元数量=变量数量
+N, D_in, H, D_out = 64, 1000, 100, 10
+
+# 创造训练样本x,y  这里随机产生
+x = np.random.randn(N, D_in)
+y = np.random.randn(N, D_out)
+# print(x)
+# print(y)
+
+# 随机初始化参数w1, w2
+w1 = np.random.randn(D_in, H)
+w2 = np.random.randn(H, D_out)
+# print(w1)
+
+# 下面就是实现神经网络的计算过程
+learning_rate = 1e-6
+epochs = 500
+
+for epoch in range(epochs):
+    # 前向传播
+    # dot()返回的是两个数组的点积,即w1和x。点积是指在向量的每个位置上的元素的乘积之和。形成一个64*100的矩阵
+    h = x.dot(w1)  # 训练样本x输入输入层w1，输入层输出参数h。
+    # maximum()函数用于查找数组元素的逐元素最大值,h中的元素与0比较，取最大值即删除负值。形成一个64*100的矩阵
+    # ReLu会使一部分神经元的输出（小于0部分）为0，这样就造成了 网络的稀疏性，并且减少了参数的相互依存关系，缓解了过拟合问题的发生。
+    h_relu = np.maximum(h, 0)  # 参数h输入激发函数，得到h_relu。
+    # 形成一个64*10的矩阵
+    y_pred = h_relu.dot(w2)  # h_relu输入输出层，得到结果。
+
+    # 计算损失
+    # square获得矩阵平方，sum将矩阵中所有元素相加
+    loss = np.square(y_pred - y).sum()
+    print(epoch, loss)  # loss会越来越小
+
+    # 反向传播
+    # w2的梯度
+    grad_y_pred = 2.0 * (y_pred - y)  # 形成一个64*10的矩阵
+    # T为转置，形成100*64的矩阵
+    grad_w2 = h_relu.T.dot(grad_y_pred)  # 形成一个100*10的矩阵
+    # w1的梯度
+    grad_h_relu = grad_y_pred.dot(w2.T)  # 形成一个64*100的矩阵
+    grad_h = grad_h_relu.copy()
+    grad_h[h < 0] = 0  # 将矩阵中小于0的元素归零，去掉负值
+    grad_w1 = x.T.dot(grad_h)  # 形成一个1000*100的矩阵
+
+    # 更新参数
+    w1 -= learning_rate * grad_w1
+    w2 -= learning_rate * grad_w2
 
 
