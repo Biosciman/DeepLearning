@@ -14,7 +14,7 @@ import gensim
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-# tf.compat.v1.disable_eager_execution()
+tf.compat.v1.disable_eager_execution()
 from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score
 
 # 配置参数
@@ -628,13 +628,13 @@ with tf.Graph().as_default():
         for g, v in gradsAndVars:
             if g is not None:
                 # tf.summary.histogram: Write a histogram summary.
-                tf.summary.histogram("{}/grad/hist".format(v.name), g)
-                tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+                tf.compat.v1.summary.histogram("{}/grad/hist".format(v.name), g)
+                tf.compat.v1.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
         # os.path.abspath获取绝对路径
         outDir = os.path.abspath(os.path.join(os.path.curdir, "summarys"))
         print("Writing to {}\n".format(outDir))
 
-        lossSummary = tf.summary.scalar("loss", cnn.loss)
+        lossSummary = tf.compat.v1.summary.scalar("loss", cnn.loss)
         summaryOp = tf.compat.v1.summary.merge_all()
 
         trainSummaryDir = os.path.join(outDir, "train")
@@ -664,9 +664,14 @@ with tf.Graph().as_default():
                 cnn.inputY: batchY,
                 cnn.dropoutKeepProb: config.model.dropoutKeepProb
             }
-            _, summary, step, loss, predictions = sess.run(
-                [trainOp, summaryOp, globalStep, cnn.loss, cnn.predictions],
+
+
+            _, step, loss, predictions = sess.run(
+                [trainOp, globalStep, cnn.loss, cnn.predictions],
                 feed_dict)
+            # print(summaryOp) # return none
+            summary = sess.run(summaryOp, feed_dict)
+
             timeStr = datetime.datetime.now().isoformat()
 
             if config.numClasses == 1:
@@ -689,7 +694,7 @@ with tf.Graph().as_default():
             feed_dict = {
                 cnn.inputX: batchX,
                 cnn.inputY: batchY,
-                cnn.dropoutKeepProb: 1.0
+                cnn.dropoutKeepProb: 0.0  # 关闭dropout
             }
             summary, step, loss, predictions = sess.run(
                 [summaryOp, globalStep, cnn.loss, cnn.predictions],
