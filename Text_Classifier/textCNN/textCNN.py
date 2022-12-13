@@ -14,6 +14,7 @@ import gensim
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+# tf.compat.v1.disable_eager_execution()
 from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score
 
 # 配置参数
@@ -278,10 +279,10 @@ class TextCNN(object):
         # dtype：数据类型。常用的是tf.float32,tf.float64等数值类型
         # shape：数据形状。默认是None，就是一维值，也可以是多维（比如[2,3], [None, 3]表示列是3，行不定）
         # name：名称
-        self.inputX = tf.placeholder(tf.int32, [None, config.sequenceLength], name="inputX")
-        self.inputY = tf.placeholder(tf.int32, [None], name="inputY")
+        self.inputX = tf.compat.v1.placeholder(tf.int32, [None, config.sequenceLength], name="inputX")
+        self.inputY = tf.compat.v1.placeholder(tf.int32, [None], name="inputY")
 
-        self.dropoutKeepProb = tf.placeholder(tf.float32, name="dropoutKeepProb")
+        self.dropoutKeepProb = tf.compat.v1.placeholder(tf.float32, name="dropoutKeepProb")
 
         # 定义l2损失
         # tf.constant创建常量
@@ -293,6 +294,7 @@ class TextCNN(object):
 
             # 利用预训练的词向量初始化词嵌入矩阵
             # tf.cast函数的作用是执行tensorflow中张量数据类型转换
+            # float32和float64的区别：在内存中占分别32和64个bits，也就是4bytes或8bytes，数位越高浮点数的精度越高
             self.W = tf.Variable(tf.cast(wordEmbedding, dtype=tf.float32, name="word2vec"), name="W")
             # 利用词嵌入矩阵将输入的数据中的词转换成词向量，维度[batch_size, sequence_length, embedding_size]
             # tf.nn ：提供神经网络相关操作的支持，包括卷积操作（conv）、池化操作（pooling）、归一化、loss、分类操作、embedding、RNN、Evaluation。
@@ -300,7 +302,7 @@ class TextCNN(object):
             # 卷积的输入是思维[batch_size, width, height, channel]，因此需要增加维度，用tf.expand_dims来增大维度
             self.embeddedWordsExpanded = tf.expand_dims(self.embeddedWords, -1)  # -1表示在最后增加1维度
 
-        # 创建卷积和池化层
+        # 创建卷积层和池化层
         pooledOutputs = []
         # 有三种size的filter，3， 4， 5，textCNN是个多通道单层卷积的模型，可以看作三个单层的卷积模型的融合
         for i, filterSize in enumerate(config.model.filterSizes):
@@ -309,7 +311,8 @@ class TextCNN(object):
                 # 初始化权重矩阵和偏置
                 filterShape = [filterSize, config.model.embeddingSize, 1, config.model.numFilters]
                 # tf.truncated_normal定义 ：截断的产生 正态分布 的随机数
-                W = tf.Variable(tf.truncated_normal(filterShape, stddev=0.1), name="W")
+                # tensorflow 2.x改为tf.random.truncated_normal
+                W = tf.Variable(tf.random.truncated_normal(filterShape, stddev=0.1), name="W")
                 b = tf.Variable(tf.constant(0.1, shape=[config.model.numFilters]), name="b")
 
                 conv = tf.nn.conv2d(
@@ -348,12 +351,25 @@ class TextCNN(object):
 
         # 全连接层的输出
         with tf.name_scope("output"):
+            # 初始化权重和偏置
+            # 不良的初始化，极易造成梯度消失or梯度爆炸
             # tf.get_variable()获取已存在的变量(要求不仅名字，而且初始化方法等各个参数都一样)，如果不存在，就新建一个；可以用各种初始化方法，不用明确指定值。
             # tf.Variable()用于生成一个初始值为initial-value的变量；必须指定初始化值。
+            outputW = tf.compat.v1.get_variable(
+                "outputW",
+                shape=[numFiltersTotal, config.numClasses],
+                initializer=tf.keras.initializers.glorot_normal
+            )
+            '''
+            tensorflow 2.x中已经删除tf.get_variable()，调用tf.compat.v1.get_variable()
             outputW = tf.get_variable(
                 "outputW",
                 shape=[numFiltersTotal, config.numClasses],
                 initializer=tf.contrib.layers.xavier_initializer())
+            tensorflow 2.x中已经删除tf.contrib
+            Xavier and Glorot are 2 names for the same initializer algorithm
+            或者改为tf.compat.v1.keras.initializers.glorot_normal
+            '''
             outputB = tf.Variable(tf.constant(0.1, shape=[config.numClasses]), name="outputB")
             l2Loss += tf.nn.l2_loss(outputW)
             l2Loss += tf.nn.l2_loss(outputB)
@@ -364,9 +380,10 @@ class TextCNN(object):
             weights: x的权重矩阵，一般都是可训练的。维度为[in_units, out_units]。注意的是第一个维度要和x的最后一个维度一样，因为需要和x进行矩阵相乘的计算
             biases：偏置。维度为一维，[out_units],注意和weights的最后一维一致，因为最终要加在XW的结果矩阵上。而X*W矩阵的维度为[batch_size, out_units]
             '''
-            self.logits = tf.nn.xw_plus_b(self.hDrop, outputW, outputB, name="logits")
+            self.logits = tf.compat.v1.nn.xw_plus_b(self.hDrop, outputW, outputB, name="logits")
             if config.numClasses == 1:
                 # tf.greater_equal比较两者大小返回bool
+                # tf.cast: Casts a tensor to a new type.
                 self.predictions = tf.cast(tf.greater_equal(self.logits, 0.0), tf.int32, name="predictions")
             elif config.numClasses > 1:
                 self.predictions = tf.argmax(self.logits, axis=-1, name="predictions")
@@ -375,7 +392,6 @@ class TextCNN(object):
 
         # 计算二元交叉熵损失
         with tf.name_scope("loss"):
-
             if config.numClasses == 1:
                 losses = tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits,
                                                                  labels=tf.cast(tf.reshape(self.inputY, [-1, 1]),
@@ -557,6 +573,16 @@ def get_multi_metrics(pred_y, true_y, labels, f_beta=1.0):
 """
 训练模型
 在训练时，定义了tensorBoard的输出，并定义了两种模型保存的方法。　
+
+一个神经网络的训练过程一般由以下5个步骤组成：
+1. 定义网络的结构，包含输入，输出，隐藏层
+2. 初始化权重和偏置。
+重复以下步骤：
+3. 前向传播 ( forward propagation )，得到预测值
+4. 计算损失函数 ( loss function )，计算预测误差
+5. 反向传播 ( back propagation )，更新权重和偏置
+直到最小化损失函数，且没有过拟合训练数据，则训练结束。
+
 """
 # 生成训练集和验证集
 trainReviews = data.trainReviews
@@ -578,11 +604,12 @@ tf.get_default_graph()函数可以获取当前默认的计算图
 """
 with tf.Graph().as_default():
     # tf.ConfigProto()主要的作用是配置tf.Session的运算方式，比如gpu运算或者cpu运算
-    session_conf = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+    session_conf = tf.compat.v1.ConfigProto(allow_soft_placement=True, log_device_placement=False)
     session_conf.gpu_options.allow_growth = True
     session_conf.gpu_options.per_process_gpu_memory_fraction = 0.9  # 配置gpu占用率
 
-    sess = tf.Session(config=session_conf)
+    # tf.Session: A class for running TensorFlow operations.
+    sess = tf.compat.v1.Session(config=session_conf)
 
     # 定义会话
     with sess.as_default():
@@ -590,7 +617,7 @@ with tf.Graph().as_default():
 
         globalStep = tf.Variable(0, name="globalStep", trainable=False)
         # 定义优化函数，传入学习速率参数
-        optimizer = tf.train.AdamOptimizer(config.training.learningRate)
+        optimizer = tf.compat.v1.train.AdamOptimizer(config.training.learningRate)
         # 计算梯度,得到梯度和变量
         gradsAndVars = optimizer.compute_gradients(cnn.loss)
         # 将梯度应用到变量下，生成训练器
@@ -600,31 +627,32 @@ with tf.Graph().as_default():
         gradSummaries = []
         for g, v in gradsAndVars:
             if g is not None:
+                # tf.summary.histogram: Write a histogram summary.
                 tf.summary.histogram("{}/grad/hist".format(v.name), g)
                 tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
-
+        # os.path.abspath获取绝对路径
         outDir = os.path.abspath(os.path.join(os.path.curdir, "summarys"))
         print("Writing to {}\n".format(outDir))
 
         lossSummary = tf.summary.scalar("loss", cnn.loss)
-        summaryOp = tf.summary.merge_all()
+        summaryOp = tf.compat.v1.summary.merge_all()
 
         trainSummaryDir = os.path.join(outDir, "train")
-        trainSummaryWriter = tf.summary.FileWriter(trainSummaryDir, sess.graph)
+        trainSummaryWriter = tf.compat.v1.summary.FileWriter(trainSummaryDir, sess.graph)
 
         evalSummaryDir = os.path.join(outDir, "eval")
-        evalSummaryWriter = tf.summary.FileWriter(evalSummaryDir, sess.graph)
+        evalSummaryWriter = tf.compat.v1.summary.FileWriter(evalSummaryDir, sess.graph)
 
         # 初始化所有变量
-        saver = tf.train.Saver(tf.global_variables(), max_to_keep=5)
+        saver = tf.compat.v1.train.Saver(tf.compat.v1.global_variables(), max_to_keep=5)
 
         # 保存模型的一种方式，保存为pb文件
-        savedModelPath = "../model/textCNN/savedModel"
+        savedModelPath = "../textCNN/savedModel"
         if os.path.exists(savedModelPath):
             os.rmdir(savedModelPath)
-        builder = tf.saved_model.builder.SavedModelBuilder(savedModelPath)
+        builder = tf.compat.v1.saved_model.builder.SavedModelBuilder(savedModelPath)
 
-        sess.run(tf.global_variables_initializer())
+        sess.run(tf.compat.v1.global_variables_initializer())
 
 
         def trainStep(batchX, batchY):
@@ -684,7 +712,7 @@ with tf.Graph().as_default():
             for batchTrain in nextBatch(trainReviews, trainLabels, config.batchSize):
                 loss, acc, prec, recall, f_beta = trainStep(batchTrain[0], batchTrain[1])
 
-                currentStep = tf.train.global_step(sess, globalStep)
+                currentStep = tf.compat.v1.train.global_step(sess, globalStep)
                 print("train: step: {}, loss: {}, acc: {}, recall: {}, precision: {}, f_beta: {}".format(
                     currentStep, loss, acc, recall, prec, f_beta))
                 if currentStep % config.training.evaluateEvery == 0:
@@ -716,20 +744,60 @@ with tf.Graph().as_default():
 
                 if currentStep % config.training.checkpointEvery == 0:
                     # 保存模型的另一种方法，保存checkpoint文件
-                    path = saver.save(sess, "../model/textCNN/model/my-model", global_step=currentStep)
+                    path = saver.save(sess, "../textCNN/model/my-model", global_step=currentStep)
                     print("Saved model checkpoint to {}\n".format(path))
 
-        inputs = {"inputX": tf.saved_model.utils.build_tensor_info(cnn.inputX),
-                  "keepProb": tf.saved_model.utils.build_tensor_info(cnn.dropoutKeepProb)}
+        inputs = {"inputX": tf.compat.v1.saved_model.utils.build_tensor_info(cnn.inputX),
+                  "keepProb": tf.compat.v1.saved_model.utils.build_tensor_info(cnn.dropoutKeepProb)}
 
-        outputs = {"predictions": tf.saved_model.utils.build_tensor_info(cnn.predictions)}
+        outputs = {"predictions": tf.compat.v1.saved_model.utils.build_tensor_info(cnn.predictions)}
 
-        prediction_signature = tf.saved_model.signature_def_utils.build_signature_def(inputs=inputs, outputs=outputs,
-                                                                                      method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
-        legacy_init_op = tf.group(tf.tables_initializer(), name="legacy_init_op")
-        builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING],
+        prediction_signature = tf.compat.v1.saved_model.signature_def_utils.build_signature_def(inputs=inputs, outputs=outputs,
+                                                                                      method_name=tf.compat.v1.saved_model.signature_constants.PREDICT_METHOD_NAME)
+        legacy_init_op = tf.group(tf.compat.v1.tables_initializer(), name="legacy_init_op")
+        builder.add_meta_graph_and_variables(sess, [tf.compat.v1.saved_model.tag_constants.SERVING],
                                              signature_def_map={"predict": prediction_signature},
                                              legacy_init_op=legacy_init_op)
 
         builder.save()
 
+#  预测代码
+
+x = "this movie is full of references like mad max ii the wild one and many others the ladybug´s face it´s a clear reference or tribute to peter lorre this movie is a masterpiece we´ll talk much more about in the future"
+
+# 注：下面两个词典要保证和当前加载的模型对应的词典是一致的
+with open("word2idx.json", "r", encoding="utf-8") as f:
+    word2idx = json.load(f)
+
+with open("label2idx.json", "r", encoding="utf-8") as f:
+    label2idx = json.load(f)
+idx2label = {value: key for key, value in label2idx.items()}
+
+xIds = [word2idx.get(item, word2idx["UNK"]) for item in x.split(" ")]
+if len(xIds) >= config.sequenceLength:
+    xIds = xIds[:config.sequenceLength]
+else:
+    xIds = xIds + [word2idx["PAD"]] * (config.sequenceLength - len(xIds))
+
+graph = tf.Graph()
+with graph.as_default():
+    gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.333)
+    session_conf = tf.compat.v1.ConfigProto(allow_soft_placement=True, log_device_placement=False, gpu_options=gpu_options)
+    sess = tf.compat.v1.Session(config=session_conf)
+
+    with sess.as_default():
+        checkpoint_file = tf.train.latest_checkpoint("../textCNN/model/")
+        saver = tf.compat.v1.train.import_meta_graph("{}.meta".format(checkpoint_file))
+        saver.restore(sess, checkpoint_file)
+
+        # 获得需要喂给模型的参数，输出的结果依赖的输入值
+        inputX = graph.get_operation_by_name("inputX").outputs[0]
+        dropoutKeepProb = graph.get_operation_by_name("dropoutKeepProb").outputs[0]
+
+        # 获得输出的结果
+        predictions = graph.get_tensor_by_name("output/predictions:0")
+
+        pred = sess.run(predictions, feed_dict={inputX: [xIds], dropoutKeepProb: 1.0})[0]
+
+pred = [idx2label[item] for item in pred]
+print(pred)
