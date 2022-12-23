@@ -16,7 +16,7 @@ new_data_X = TotalData_X(randIndex,:);
 new_data_Y = TotalData_Y(randIndex,:);   
 
 % ceil将 X 的每个元素四舍五入到大于或等于该元素的最接近整数。
-testindex = ceil(dataNumber * 0.1); %% 获得分界下标,
+testindex = ceil(dataNumber * 0.8); %% 获得分界下标,
 
 XTest = new_data_X(1:testindex,:);
 XTrain = new_data_X(testindex+1:end,:);
@@ -42,7 +42,7 @@ miniBatchSize = 32;
 % 增加maxPooling1dLayer
 
 inputSize = 1;
-numHiddenUnits = 100;
+numHiddenUnits = 50;
 numClasses = 2;
 embeddingDimension = 21;
 numWords = 2000;
@@ -53,18 +53,35 @@ poolSize = 5;
 layers = [ ...
     sequenceInputLayer(inputSize,MinLength=2000)
     wordEmbeddingLayer(embeddingDimension,numWords)
-    convolution1dLayer(16,64)
+    convolution1dLayer(8,128)
     batchNormalizationLayer
-    maxPooling1dLayer(poolSize, Stride=5)
-    convolution1dLayer(16,64)
+    reluLayer
+
+    convolution1dLayer(1,64)
     batchNormalizationLayer
-    maxPooling1dLayer(poolSize, Stride=5)
-    convolution1dLayer(16,64)
+    reluLayer
+    
+    convolution1dLayer(3,64)
     batchNormalizationLayer
-    maxPooling1dLayer(poolSize, Stride=5)
+    reluLayer
+
+    convolution1dLayer(1,128)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling1dLayer(3, Stride=5)
+
+    convolution1dLayer(3,64)
+    batchNormalizationLayer
+    reluLayer
+
+    convolution1dLayer(3,64)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling1dLayer(2, Stride=5)
+
+    dropoutLayer
     bilstmLayer(numHiddenUnits,OutputMode="last")
-    bilstmLayer(numHiddenUnits,OutputMode="last")
-    bilstmLayer(numHiddenUnits,OutputMode="last")
+    dropoutLayer
     fullyConnectedLayer(numClasses)
     softmaxLayer
     classificationLayer];
@@ -95,6 +112,7 @@ options = trainingOptions("adam", ...
     ValidationFrequency=10,...
     OutputNetwork='best-validation-loss',...
     L2Regularization=0.0001,...
+    InitialLearnRate=0.001,...
     Plots="training-progress");
 
 %% 训练 LSTM 网络
@@ -121,4 +139,4 @@ pre
 F1 = (2*pre*recall)/(pre+recall);
 F1
 
-save(sprintf('T6SS_LSTM_Model_V40_acc_%.4f.mat',acc)); 
+save(sprintf('T6SS_LSTM_Model_V41_acc_%.4f.mat',acc)); 
