@@ -1,0 +1,3 @@
+《MATLAB机器学习人工智能工程实践（原书第2版）》
+
+https://github.com/Apress/matlab-machine-learning
