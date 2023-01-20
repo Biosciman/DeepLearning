@@ -7,7 +7,7 @@ for x in range(0, 11):
         print("当x={0}，酒精读书={1}".format(x, alcohol))
 
 alcohol = 58
-x = [x for x in range(0,11)]
+x = [x for x in range(0, 101)]
 y = [alcohol * (1/2) ** y for y in x]
 plt.axis([0, 12, 0, 60])
 plt.plot(x, y)
